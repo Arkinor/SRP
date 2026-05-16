@@ -1,0 +1,11 @@
+{
+  "video_dir": "D:\\ProjectCursor\\SRP\\video",
+  "auto_clear_temp": true,
+  "show_notifications": true,
+  "enable_hotkeys": true,
+  "auto_open_folder": false,
+  "selected_speaker_device": "Наушники (JBL Tune 520BT Stereo)",
+  "selected_microphone_device": "Микрофон (fifine Chat)",
+  "record_speakers": true,
+  "record_microphone": true
+}

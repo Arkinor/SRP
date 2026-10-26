@@ -1,0 +1,30 @@
+{
+  "video_dir": "D:\\Project\\SRP\\Записи",
+  "source_mode": "monitor",
+  "monitor_name": "\\\\.\\DISPLAY5",
+  "monitor_rect": {
+    "left": 0,
+    "top": 0,
+    "width": 1920,
+    "height": 1080
+  },
+  "region": {},
+  "window_title": "",
+  "window_hwnd": 0,
+  "fps": 30,
+  "quality": "high",
+  "encoder": "auto",
+  "record_system": true,
+  "record_mic": true,
+  "system_device_id": "",
+  "mic_device_id": "",
+  "system_gain": 1.0,
+  "mic_gain": 1.0,
+  "show_cursor": true,
+  "countdown": 0,
+  "hide_on_record": false,
+  "hotkeys": true,
+  "open_folder_after": false,
+  "format": "mp4",
+  "schema": 1
+}

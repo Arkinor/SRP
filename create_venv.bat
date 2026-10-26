@@ -14,7 +14,7 @@ echo.
 
 :: Find global Python 3.11
 set PYTHON_EXE=
-echo [1/4] Looking for Python %PYTHON_VERSION%...
+echo [1/5] Looking for Python %PYTHON_VERSION%...
 
 :: Common install paths
 for %%p in (
@@ -74,7 +74,7 @@ echo Found: %PYTHON_EXE%
 echo.
 
 :: Create virtual environment if missing
-echo [2/4] Setting up virtual environment...
+echo [2/5] Setting up virtual environment...
 if not exist ".venv" (
     %PYTHON_EXE% -m venv .venv
     if errorlevel 1 (
@@ -88,7 +88,7 @@ if not exist ".venv" (
 )
 
 :: Activate venv
-echo [3/4] Activating virtual environment...
+echo [3/5] Activating virtual environment...
 call .venv\Scripts\activate.bat
 if errorlevel 1 (
     echo ERROR: Failed to activate virtual environment.
@@ -102,16 +102,32 @@ python --version
 echo.
 
 :: Done - stop here
-echo [4/4] Setup complete!
+echo [4/5] Installing project dependencies...
+python -m pip install --upgrade pip
+if errorlevel 1 (
+    echo ERROR: Failed to upgrade pip.
+    pause
+    exit /b 1
+)
+python -m pip install -r requirements.txt
+if errorlevel 1 (
+    echo ERROR: Failed to install requirements.
+    pause
+    exit /b 1
+)
+echo Dependencies installed.
+echo.
+
+echo [5/5] Setup complete!
 echo ================================================================
 echo Virtual environment is ready and activated
 echo ================================================================
 echo.
-echo You can now install packages manually using:
-echo   pip install package_name
+echo Run the application:
+echo   python app.py
 echo.
-echo Or run your script manually:
-echo   python main.py
+echo Build a single EXE with an icon:
+echo   build_exe.bat
 echo.
 echo To deactivate the virtual environment, type:
 echo   deactivate

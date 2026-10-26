@@ -3,7 +3,6 @@
 Screen Recorder Pro - Professional Screen Recording Tool
 Поддерживает запись экрана и системного звука с горячими клавишами
 """
-from PIL import Image, ImageTk
 import tkinter as tk
 from tkinter import ttk, messagebox, Listbox, END, filedialog, simpledialog
 import threading
@@ -20,16 +19,12 @@ import cv2
 from mss import mss
 import wmi
 import soundcard as sc
-from datetime import datetime, timedelta
+from datetime import datetime
 import psutil
 import pythoncom
 import logging
 import json
-from pathlib import Path
-from PIL import Image, ImageTk
-import webbrowser
 import traceback
-import socket
 
 
 # ================================
@@ -89,7 +84,7 @@ def setup_logging():
         if not os.path.exists(log_file):
             with open(log_file, 'w', encoding='utf-8') as f:
                 f.write(f"Log file created at {datetime.now()}\n")
-                f.write(f"Screen Recorder Pro v3.0\n")
+                f.write("Screen Recorder Pro v3.0\n")
                 f.write("=" * 60 + "\n")
         else:
             with open(log_file, 'a', encoding='utf-8') as f:
@@ -185,6 +180,10 @@ class AppState:
     video_samples_recorded = 0  # Количество захваченных видео-кадров
     audio_samples_recorded = 0  # Количество записанных аудио-сэмплов
     recording_duration = 0  # Длительность записи
+
+
+# Список описаний мониторов (заполняется при старте/создании интерфейса)
+monitor_descriptions = []
 
 
 # ================================
@@ -558,7 +557,7 @@ def speaker_recording_thread(temp_speaker_path):
     """Поток записи системного звука (динамиков)"""
     thread_name = "SpeakerThread-soundcard"
     threading.current_thread().name = thread_name
-    logger.info(f"Запуск потока записи системного звука через soundcard")
+    logger.info("Запуск потока записи системного звука через soundcard")
     pythoncom.CoInitialize()
 
     try:
@@ -593,7 +592,7 @@ def speaker_recording_thread(temp_speaker_path):
         if AppState.common_start_time:
             logger.info(f"Время от общего старта: {AppState.audio_actual_start - AppState.common_start_time:.3f} сек")
 
-        show_notification(f"Запись системного звука...")
+        show_notification("Запись системного звука...")
 
         try:
             with speaker_device.recorder(samplerate=Config.SAMPLE_RATE, blocksize=Config.AUDIO_BUFFER_SIZE * 8) as mic:
@@ -670,7 +669,7 @@ def microphone_recording_thread(temp_microphone_path):
     """Поток записи звука с микрофона"""
     thread_name = "MicrophoneThread-soundcard"
     threading.current_thread().name = thread_name
-    logger.info(f"Запуск потока записи микрофона через soundcard")
+    logger.info("Запуск потока записи микрофона через soundcard")
     pythoncom.CoInitialize()
 
     try:
@@ -697,7 +696,7 @@ def microphone_recording_thread(temp_microphone_path):
 
         AppState.start_event.wait()
 
-        show_notification(f"Запись микрофона...")
+        show_notification("Запись микрофона...")
 
         try:
             with microphone_device.recorder(samplerate=Config.SAMPLE_RATE, blocksize=Config.AUDIO_BUFFER_SIZE) as mic:
@@ -1061,7 +1060,7 @@ def merge_video_and_audio(video_file, speaker_file, microphone_file, timestamp):
             else:
                 complex_filter_parts.append(f"[{audio_idx}:a]anull[speaker_audio]")
                 if delay_ms < 0:
-                    append_log(f"🔊 Аудио опережает, компенсация не поддерживается напрямую")
+                    append_log("🔊 Аудио опережает, компенсация не поддерживается напрямую")
             audio_inputs.append("speaker")
             audio_idx += 1
 
@@ -1087,7 +1086,7 @@ def merge_video_and_audio(video_file, speaker_file, microphone_file, timestamp):
                 cmd += ["-filter_complex", ";".join(complex_filter_parts)]
                 cmd += ["-map", "0:v", "-map", "[a]"]
             else:
-                cmd += ["-filter_complex", f"[1:a][2:a]amix=inputs=2:duration=longest[a]", "-map", "0:v", "-map", "[a]"]
+                cmd += ["-filter_complex", "[1:a][2:a]amix=inputs=2:duration=longest[a]", "-map", "0:v", "-map", "[a]"]
             cmd += ["-c:a", "aac", "-b:a", "128k"]
             append_log("🔊 Микширование: динамики + микрофон" + delay_info)
         elif has_speaker_audio:
@@ -1111,7 +1110,7 @@ def merge_video_and_audio(video_file, speaker_file, microphone_file, timestamp):
             start_time = time.time()
             process = None
             try:
-                append_log(f"🚀 Запуск FFmpeg...")
+                append_log("🚀 Запуск FFmpeg...")
                 process = subprocess.Popen(
                     cmd,
                     stdout=subprocess.PIPE,
@@ -1176,7 +1175,8 @@ def merge_video_and_audio(video_file, speaker_file, microphone_file, timestamp):
                 append_log(f"❌ Исключение: {e}", is_error=True)
                 if process:
                     process.terminate()
-                root.after(0, lambda: show_notification(f"Ошибка обработки: {str(e)[:50]}...", error=True))
+                error_text = str(e)[:50]
+                root.after(0, lambda msg=error_text: show_notification(f"Ошибка обработки: {msg}...", error=True))
 
         threading.Thread(target=run_ffmpeg, daemon=True).start()
         progress_window.wait_window()
@@ -1200,7 +1200,6 @@ def get_video_duration(video_path):
                     hours = int(parts[0])
                     minutes = int(parts[1])
                     seconds = float(parts[2])
-                    total_seconds = hours * 3600 + minutes * 60 + seconds
 
                     if hours > 0:
                         return f"{hours}ч {minutes}м {int(seconds)}с"
@@ -1238,7 +1237,7 @@ def safe_remove_file(filepath, max_attempts=5, delay=0.2):
             os.remove(filepath)
             logger.info(f"Файл удален: {filepath} ({file_size} байт)")
             return
-        except PermissionError as e:
+        except PermissionError:
             if attempt < max_attempts - 1:
                 logger.warning(f"Попытка {attempt + 1}/{max_attempts}: файл занят {filepath}")
                 time.sleep(delay)
@@ -1582,7 +1581,7 @@ def copy_filepath_to_clipboard():
         root.update()
 
         logger.info(f"Путь скопирован в буфер обмена: {filepath}")
-        show_notification(f"Путь скопирован в буфер обмена 📋")
+        show_notification("Путь скопирован в буфер обмена 📋")
     except Exception as e:
         logger.error(f"Ошибка копирования пути: {e}", exc_info=True)
         show_notification("Ошибка копирования пути", error=True)
@@ -1696,7 +1695,7 @@ def debug_audio_devices():
                 logger.info(f"  {i + 1}. {mic.name}")
                 try:
                     with mic.recorder(samplerate=44100, blocksize=1024) as test_mic:
-                        test_data = test_mic.record(numframes=1024)
+                        test_mic.record(numframes=1024)
                     logger.info(f"      Доступно: ДА, каналы: {mic.channels if hasattr(mic, 'channels') else '?'}")
                 except Exception as e:
                     logger.info(f"      Доступно: НЕТ, ошибка: {str(e)[:50]}")
@@ -1730,7 +1729,7 @@ def check_audio_device_ui(device_name, device_type="speaker"):
     main_frame.pack(fill='both', expand=True)
     
     # Информация об устройстве
-    ttk.Label(main_frame, text=f"Тестирование устройства:", font=('Segoe UI', 10)).pack(anchor='w')
+    ttk.Label(main_frame, text="Тестирование устройства:", font=('Segoe UI', 10)).pack(anchor='w')
     ttk.Label(main_frame, text=device_name[:50] + "..." if len(device_name) > 50 else device_name, 
               font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 15))
     
@@ -1799,7 +1798,7 @@ def check_audio_device_ui(device_name, device_type="speaker"):
                 add_details("ОШИБКА: Устройство не найдено в списке доступных")
                 return
             
-            add_details(f"✅ Устройство найдено")
+            add_details("✅ Устройство найдено")
             
             # Тест 1: Базовая доступность
             update_status("🧪 Тест 1: Проверка доступности...", '#1976d2')
@@ -1863,7 +1862,7 @@ def check_audio_device_ui(device_name, device_type="speaker"):
                     max_amplitude = np.max(np.abs(all_audio))
                     rms = np.sqrt(np.mean(all_audio**2))
                     
-                    add_details(f"📊 Анализ данных:")
+                    add_details("📊 Анализ данных:")
                     add_details(f"   Длительность: {duration:.2f} сек")
                     add_details(f"   Сэмплов: {len(all_audio)}")
                     add_details(f"   Макс. амплитуда: {max_amplitude:.4f}")
@@ -2312,9 +2311,13 @@ def create_gui():
     """Создает графический интерфейс"""
     global root, start_button, stop_button, pause_button, status_label
     global video_listbox, notification_listbox, audio_status_label
-    global audio_indicator, video_count_label, performance_label, settings_window
+    global audio_indicator, video_count_label, performance_label
+    global monitor_descriptions
 
     load_settings()
+
+    if not monitor_descriptions:
+        monitor_descriptions = get_monitor_descriptions()
 
     root = tk.Tk()
     root.title(f"{Config.APP_NAME} v{Config.VERSION}")
@@ -2868,7 +2871,7 @@ def show_file_in_folder():
 
             except Exception as e:
                 logger.error(f"Ошибка показа файла в папке: {e}", exc_info=True)
-                show_notification(f"Не удалось показать файл в папке", error=True)
+                show_notification("Не удалось показать файл в папке", error=True)
         else:
             logger.warning(f"Файл не найден: {filepath}")
             show_notification("Файл не найден ⚠️", warning=True)
@@ -2924,7 +2927,7 @@ if __name__ == "__main__":
         if AppState.record_microphone and AppState.selected_microphone_device:
             print(f"🎤 Устройство микрофона: {AppState.selected_microphone_device[:50]}")
 
-        print(f"\n📋 Логи записываются в: screen_recorder.log")
+        print("\n📋 Логи записываются в: screen_recorder.log")
         print(f"{'=' * 60}\n")
 
         show_notification(f"{Config.APP_NAME} v{Config.VERSION} запущен и готов к записи! 🚀")
@@ -2934,8 +2937,6 @@ if __name__ == "__main__":
     except Exception as e:
         logger.critical(f"Критическая ошибка при запуске: {e}", exc_info=True)
         print(f"\n❌ Критическая ошибка: {e}")
-        import traceback
-
         traceback.print_exc()
 
         try:
@@ -2944,7 +2945,7 @@ if __name__ == "__main__":
                 f.write(f"Ошибка: {e}\n")
                 f.write("\nТрассировка:\n")
                 traceback.print_exc(file=f)
-            print(f"Детали ошибки записаны в screen_recorder_crash.log")
+            print("Детали ошибки записаны в screen_recorder_crash.log")
         except:
             pass
 

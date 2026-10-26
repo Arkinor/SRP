@@ -20,7 +20,7 @@ from typing import Optional
 
 import mss
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageOps
 
 from . import ffmpeg_tools, logger, winapi
 
@@ -261,6 +261,9 @@ class SourceGrabber:
     def _current_rect(self) -> Optional[dict]:
         if self.spec.mode != "window" or not self.spec.hwnd:
             return dict(self.rect)
+        if winapi.is_minimized(self.spec.hwnd):
+            self._window_lost = True
+            return None
         frame = winapi.window_frame(self.spec.hwnd)
         if not frame:
             self._window_lost = True
@@ -282,8 +285,11 @@ class SourceGrabber:
 
         frame = raw
         if raw.shape[1] != self.out_w or raw.shape[0] != self.out_h:
-            image = Image.frombytes("RGB", (raw.shape[1], raw.shape[0]), raw[:, :, [2, 1, 0]].tobytes())
-            image = image.resize((self.out_w, self.out_h), Image.BILINEAR)
+            image = Image.frombytes("RGB", (raw.shape[1], raw.shape[0]),
+                                    raw[:, :, [2, 1, 0]].tobytes())
+            # keep the aspect ratio: letterbox instead of stretching
+            image = ImageOps.pad(image, (self.out_w, self.out_h),
+                                 color=(5, 6, 11), centering=(0.5, 0.5))
             arr = np.asarray(image)
             frame = np.dstack([arr[:, :, ::-1], np.full((self.out_h, self.out_w, 1), 255, np.uint8)])
         elif raw.shape[1] > self.out_w or raw.shape[0] > self.out_h:

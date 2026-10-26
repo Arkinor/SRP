@@ -24,11 +24,13 @@ from ..config import (
 from ..recorder import Recorder, build_source, capture_screenshot
 from . import icons
 from .kit import Panel, PopupItem, UI, build_background, tile_image
+from .overlay import RecordingOverlay
 from .overlays import RegionSelector
 from .theme import (
     ACCENT, ACCENT_LIGHT, BLUE, DIM, FAINT, GREEN, MUTED, PURPLE, RED, TEXT, TEXT_SOFT,
     WHITE, YELLOW, Theme, glow, logo, round_image, solid,
 )
+from .tray import TrayIcon
 from .views import GalleryView, RecordView, SettingsView, W, H, fmt_elapsed, fmt_size
 
 LOG = logger.get()
@@ -117,7 +119,14 @@ class App:
         self._moved = False
         self._win_drag = None
         self._region_selector: Optional[RegionSelector] = None
-        self._minimized_for_record = False
+        self._hidden_to_tray = False
+        self._hidden_for_record = False
+        self._window_lost_alert = False
+        self._region_prev_mode = "monitor"
+        self._region_revert = False
+        self._tray: Optional[TrayIcon] = None
+        self._tray_state = ""
+        self._overlay: Optional[RecordingOverlay] = None
         self._quit_after_save = False
         self._save_job = None
         self._hotkeys: list = []
@@ -143,7 +152,10 @@ class App:
         self._detect_tools()
         self._install_hotkeys()
 
+        self._overlay = RecordingOverlay(self)
         self.build()
+        self._apply_capture_exclusion()
+        self._setup_tray()
         self.root.deiconify()
         self.root.lift()
         self.root.focus_force()
@@ -187,6 +199,7 @@ class App:
         self.canvas.bind("<MouseWheel>", self._on_wheel)
         root.bind("<Escape>", self._on_escape)
         root.bind("<Map>", self._on_map)
+        root.bind("<Unmap>", self._on_unmap)
 
     # ------------------------------------------------------------------
     # rendering
@@ -236,6 +249,28 @@ class App:
         if self.toast_state and self.toast_state["until"] > time.time():
             ui.toast(self.toast_state["text"], self.toast_state["icon"],
                      self.toast_state["color"])
+        self._update_tray()
+
+    def _update_tray(self) -> None:
+        tray = self._tray
+        if tray is None or self.state == self._tray_state:
+            return
+        self._tray_state = self.state
+        titles = {
+            "recording": "SR Pro — идёт запись",
+            "paused": "SR Pro — пауза",
+            "finalizing": "SR Pro — сохранение",
+        }
+        tray.update(self.state in ("recording", "paused"),
+                    titles.get(self.state, "SR Pro"))
+
+    def _setup_tray(self) -> None:
+        try:
+            self._tray = TrayIcon(self)
+            self._tray.start()
+        except Exception:
+            LOG.exception("Не удалось запустить значок в трее")
+            self._tray = None
 
     def _draw_header(self) -> None:
         ui, p = self.ui, self.p
@@ -382,6 +417,33 @@ class App:
     def _on_map(self, _event=None) -> None:
         self.root.after(80, self._after_restore)
 
+    def _on_unmap(self, event=None) -> None:
+        """Taskbar minimise also sends the app to the tray."""
+        if self._closing or self._hidden_to_tray:
+            return
+        if event is not None and event.widget is not self.root:
+            return
+        try:
+            if self.root.state() != "iconic":
+                return
+        except Exception:
+            return
+        self._hidden_to_tray = True
+        self.root.after(20, self._hide_iconic_to_tray)
+
+    def _hide_iconic_to_tray(self) -> None:
+        if self._closing or not self._hidden_to_tray:
+            return
+        try:
+            self.root.withdraw()
+        except Exception:
+            pass
+        if self._tray is not None:
+            self._tray.notify(
+                "SR Pro свёрнут в трей. Двойной щелчок по значку вернёт окно.",
+                once=True,
+            )
+
     def _after_restore(self) -> None:
         winapi.set_round_region(self.hwnd, self.W, self.H, self.p(26))
         self._request_preview()
@@ -405,7 +467,36 @@ class App:
             self._request_preview()
 
     def minimize(self) -> None:
-        winapi.minimize(self.hwnd)
+        self.hide_to_tray()
+
+    def hide_to_tray(self) -> None:
+        if self._closing:
+            return
+        self._hidden_to_tray = True
+        try:
+            self.root.withdraw()
+        except Exception:
+            pass
+        if self._tray is not None:
+            self._tray.notify(
+                "SR Pro свёрнут в трей. Двойной щелчок по значку вернёт окно.",
+                once=True,
+            )
+
+    def show_main(self, focus: bool = True) -> None:
+        if self._closing:
+            return
+        self._hidden_to_tray = False
+        self._hidden_for_record = False
+        try:
+            self.root.deiconify()
+            self.root.lift()
+            if focus:
+                self.root.focus_force()
+        except Exception:
+            pass
+        winapi.restore(self.hwnd)
+        self.root.after(80, self._after_restore)
 
     def request_close(self) -> None:
         if self._closing:
@@ -432,6 +523,12 @@ class App:
         self._closing = True
         self.save_now()
         self._remove_hotkeys()
+        if self._overlay is not None:
+            self._overlay.destroy()
+            self._overlay = None
+        if self._tray is not None:
+            self._tray.stop()
+            self._tray = None
         if self._preview is not None:
             self._preview.close()
         try:
@@ -469,6 +566,13 @@ class App:
             worker.request.set()
 
     def preview_visible(self) -> bool:
+        if self._hidden_to_tray or self._hidden_for_record:
+            return False
+        try:
+            if not self.root.winfo_viewable():
+                return False
+        except Exception:
+            pass
         try:
             if winapi.user32.IsIconic(self.hwnd):
                 return False
@@ -484,8 +588,9 @@ class App:
         if image is None:
             return None
         target = (self.p(604), self.p(340))
-        image = ImageOps.fit(image.convert("RGB"), target, Image.LANCZOS,
-                             centering=(0.5, 0.5))
+        # letterbox instead of cropping so window/region previews stay honest
+        image = ImageOps.pad(image.convert("RGB"), target, Image.LANCZOS,
+                             color=(8, 9, 16), centering=(0.5, 0.5))
         return round_image(image, self.p(20), border=(255, 255, 255, 40), border_width=1)
 
     def _apply_capture_exclusion(self) -> None:
@@ -527,7 +632,13 @@ class App:
             return
         self.settings.save()
         self.menu_state = None
-        if self.settings.countdown > 0:
+        self._apply_capture_exclusion()
+        hidden = self._hidden_to_tray or self._hidden_for_record
+        try:
+            hidden = hidden or not self.root.winfo_viewable()
+        except Exception:
+            pass
+        if self.settings.countdown > 0 and not hidden:
             self.countdown_end = time.perf_counter() + self.settings.countdown
             self.countdown_shown = -1
             self.state = "countdown"
@@ -541,10 +652,12 @@ class App:
             return
         self.state = "idle"
         self.countdown_end = 0.0
+        self._apply_capture_exclusion()
         self.build()
 
     def _begin_recording(self) -> None:
         self.state = "starting"
+        self._apply_capture_exclusion()
         self.build()
         winapi.beep(980, 90)
 
@@ -569,6 +682,7 @@ class App:
             self.recorder = None
             self.state = "idle"
             self._apply_capture_exclusion()
+            self._sync_overlay()
             self.build()
             self.toast(error or "Не удалось начать запись", icon="warning", color=RED)
             winapi.beep(320, 160)
@@ -577,15 +691,52 @@ class App:
         self._apply_capture_exclusion()
         self.build()
         self._request_preview()
-        if self.settings.hide_on_record:
-            self._minimized_for_record = True
-            self.root.after(180, self.minimize)
+        self._sync_overlay()
+        if self.settings.hide_on_record and not self._hidden_to_tray:
+            self._hidden_for_record = True
+            self.root.after(220, self._hide_for_recording)
+
+    def _hide_for_recording(self) -> None:
+        if self._closing or self.state not in ("recording", "paused"):
+            return
+        if not self._hidden_for_record:
+            return
+        try:
+            self.root.withdraw()
+        except Exception:
+            pass
+        if self._tray is not None:
+            self._tray.notify(
+                "Запись идёт. Панель управления — поверх окон, значок — в трее.",
+                once=True,
+            )
+
+    def _sync_overlay(self) -> None:
+        overlay = self._overlay
+        if overlay is None:
+            return
+        recording = self.state in ("recording", "paused")
+        if recording and self.settings.show_overlay:
+            if not overlay.visible:
+                overlay.show(paused=self.state == "paused")
+            else:
+                overlay.tick(self.elapsed(), self.state == "paused")
+        else:
+            overlay.hide()
+
+    def toggle_pause(self) -> None:
+        if self.state == "recording":
+            self.pause()
+        elif self.state == "paused":
+            self.resume()
 
     def pause(self) -> None:
         if self.state != "recording" or self.recorder is None:
             return
         self.recorder.pause()
         self.state = "paused"
+        if self._overlay is not None and self._overlay.visible:
+            self._overlay.tick(self.elapsed(), True)
         self.build()
 
     def resume(self) -> None:
@@ -593,6 +744,8 @@ class App:
             return
         self.recorder.resume()
         self.state = "recording"
+        if self._overlay is not None and self._overlay.visible:
+            self._overlay.tick(self.elapsed(), False)
         self.build()
 
     def stop(self) -> None:
@@ -602,6 +755,7 @@ class App:
         self.state = "finalizing"
         self.finalize_progress = 0.0
         self.progress_subtitle = "Собираем видео и звук в один файл…"
+        self._sync_overlay()
         recorder.stop()
         recorder.finalize_async(
             progress=lambda value: self.events.put(("progress", value)),
@@ -613,10 +767,12 @@ class App:
         self.state = "idle"
         self.finalize_progress = 0.0
         self.recorder = None
-        if self._minimized_for_record:
-            self._minimized_for_record = False
-            winapi.restore(self.hwnd)
+        self._window_lost_alert = False
+        if self._hidden_for_record:
+            self._hidden_for_record = False
+            self.show_main(focus=False)
         self._apply_capture_exclusion()
+        self._sync_overlay()
         self.build()
         if result is None:
             self.toast(warning or "Не удалось сохранить запись", icon="warning", color=RED)
@@ -630,6 +786,8 @@ class App:
             self.toast(warning, icon="warning", color=YELLOW)
         else:
             self.toast(message, icon="check", color=GREEN)
+        if self._hidden_to_tray and self._tray is not None:
+            self._tray.notify(f"Запись сохранена · {Path(result.path).name}")
         winapi.beep(1040, 90)
         self.refresh_gallery()
         if self.settings.open_folder_after:
@@ -822,10 +980,13 @@ class App:
     # settings callbacks
     def set_source_mode(self, index: int) -> None:
         mode = ("monitor", "region", "window")[index]
+        previous = self.settings.source_mode
         self.settings.source_mode = mode
         self.save_now()
         self.build()
         if mode == "region" and not (self.settings.region or {}).get("width"):
+            self._region_prev_mode = previous if previous != "region" else "monitor"
+            self._region_revert = True
             self.root.after(120, self.choose_region)
         elif mode == "window" and not self.settings.window_hwnd:
             self.build()
@@ -863,7 +1024,9 @@ class App:
         self.save_now()
         if name == "hotkeys":
             self._install_hotkeys()
-            self.build()
+        if name == "show_overlay":
+            self._sync_overlay()
+        self.build()
 
     def reset_settings(self) -> None:
         def apply() -> None:
@@ -953,6 +1116,13 @@ class App:
             return
         if self._region_selector is not None:
             return
+        if not self._region_revert:
+            if self.settings.source_mode != "region":
+                self._region_prev_mode = self.settings.source_mode
+                self._region_revert = True
+            elif not (self.settings.region or {}).get("width"):
+                self._region_prev_mode = "monitor"
+                self._region_revert = True
         self.menu_state = None
         self.root.withdraw()
         self.root.after(240, self._open_region_selector)
@@ -972,16 +1142,17 @@ class App:
         except Exception as exc:
             error = str(exc)
         if screenshot is None:
-            self._restore_after_region()
+            self._region_cancelled()
             self.toast(f"Не удалось снять экран: {error}", icon="warning", color=RED)
             return
         self._region_selector = RegionSelector(
             self.root, self.t, screenshot, origin, self._region_done,
-            self._restore_after_region,
+            self._region_cancelled,
         )
 
     def _region_done(self, rect: dict) -> None:
         self._region_selector = None
+        self._region_revert = False
         self.settings.region = rect
         self.settings.source_mode = "region"
         self.save_now()
@@ -989,6 +1160,13 @@ class App:
         self.toast(f"Область {rect['width']}×{rect['height']} выбрана", icon="crop",
                    color=GREEN)
         self._request_preview()
+
+    def _region_cancelled(self) -> None:
+        if self._region_revert and not (self.settings.region or {}).get("width"):
+            self.settings.source_mode = self._region_prev_mode or "monitor"
+            self.save_now()
+        self._region_revert = False
+        self._restore_after_region()
 
     def _restore_after_region(self) -> None:
         self._region_selector = None
@@ -1165,6 +1343,12 @@ class App:
             else:
                 for kind in self._levels:
                     self._levels[kind] *= 0.8
+            if self._overlay is not None and self._overlay.visible:
+                if self.state in ("recording", "paused") and self.recorder is not None:
+                    self._overlay.tick(self.elapsed(), self.state == "paused")
+                elif self.state not in ("recording", "paused", "finalizing"):
+                    self._overlay.hide()
+            self._check_window_lost()
             self.current_view.tick(self.ui)
             if self.state == "finalizing" and self._progress_card is not None:
                 self.ui.update_progress(self._progress_card, self.finalize_progress)
@@ -1239,8 +1423,48 @@ class App:
                 self.gallery_dirty = True
             elif kind == "hotkey":
                 self._on_hotkey(event[1])
+            elif kind == "tray":
+                self._tray_action(str(event[1]))
             elif kind == "toast":
                 self.toast(*event[1])
+
+    def _check_window_lost(self) -> None:
+        if self.recorder is None or self.state not in ("recording", "paused"):
+            self._window_lost_alert = False
+            return
+        grabber = getattr(self.recorder, "grabber", None)
+        lost = bool(getattr(grabber, "window_lost", False))
+        if lost and not self._window_lost_alert:
+            message = ("Записываемое окно свёрнуто или закрыто — запись идёт "
+                       "без него. Разверните окно, чтобы вернуть картинку.")
+            if self._hidden_to_tray or self._hidden_for_record:
+                if self._tray is not None:
+                    self._tray.notify(message)
+            else:
+                self.toast(message, icon="warning", color=YELLOW, seconds=6)
+        self._window_lost_alert = lost
+
+    def _tray_action(self, action: str) -> None:
+        if action == "show":
+            self.show_main()
+        elif action == "settings":
+            self.show_main()
+            self.switch_view("settings")
+        elif action == "toggle":
+            if self.state in ("recording", "paused"):
+                self.stop()
+            elif self.state == "countdown":
+                self.cancel_countdown()
+            elif self.state == "idle":
+                self.start()
+        elif action == "pause":
+            self.toggle_pause()
+        elif action == "shot":
+            if self.state in ("idle", "recording", "paused"):
+                self.screenshot()
+        elif action == "quit":
+            self.show_main()
+            self.request_close()
 
     def _on_recorder_event(self, kind: str, payload) -> None:
         if kind == "paused":
@@ -1331,10 +1555,7 @@ class App:
             elif self.state == "idle":
                 self.start()
         elif action == "pause":
-            if self.state == "recording":
-                self.pause()
-            elif self.state == "paused":
-                self.resume()
+            self.toggle_pause()
         elif action == "shot":
             if self.state in ("idle", "recording", "paused"):
                 self.screenshot()

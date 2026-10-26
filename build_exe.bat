@@ -78,6 +78,7 @@ if not exist "dist" mkdir "dist"
     --hidden-import "keyboard._winkeyboard" ^
     --hidden-import "pythoncom" ^
     --hidden-import "pywintypes" ^
+    --hidden-import "pystray._win32" ^
     --collect-all "soundcard" ^
     --collect-all "imageio_ffmpeg" ^
     app.py

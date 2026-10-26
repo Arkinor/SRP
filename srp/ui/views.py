@@ -274,19 +274,21 @@ class RecordView(View):
         x0, y0 = p(RIGHT_X), p(332)
         ui.text(x0 + p(20), y0 + p(22), "Параметры", 13.5, TEXT, "semibold")
 
-        ui.text(x0 + p(20), y0 + p(54), "Плавность", 11.5, MUTED)
+        ui.text(x0 + p(20), y0 + p(54), "Частота кадров", 11.3, MUTED)
         fps_index = (24, 30, 60).index(settings.fps)
         ui.segmented((x0 + p(198), y0 + p(38), RIGHT_W - p(218), p(32)),
                      ["24", "30", "60"], fps_index, app.set_fps, size=11, radius=10)
+        ui.text(x0 + p(20), y0 + p(76), "Чем больше — тем плавнее движение и больше файл",
+                9.2, DIM, max_width=p(344))
 
-        ui.text(x0 + p(20), y0 + p(94), "Качество", 11.5, MUTED)
+        ui.text(x0 + p(20), y0 + p(104), "Качество", 11.5, MUTED)
         q_index = ("high", "balanced", "small").index(settings.quality)
-        ui.segmented((x0 + p(150), y0 + p(78), RIGHT_W - p(170), p(32)),
+        ui.segmented((x0 + p(150), y0 + p(88), RIGHT_W - p(170), p(32)),
                      ["Высокое", "Баланс", "Компактно"], q_index, app.set_quality,
                      size=10.3, radius=10)
 
-        ui.text(x0 + p(20), y0 + p(134), "Курсор мыши", 11.5, MUTED)
-        ui.toggle(x0 + RIGHT_W - p(66), y0 + p(120), settings.show_cursor,
+        ui.text(x0 + p(20), y0 + p(142), "Курсор мыши", 11.5, MUTED)
+        ui.toggle(x0 + RIGHT_W - p(66), y0 + p(128), settings.show_cursor,
                   lambda value: app.set_bool("show_cursor", value))
 
     def _stats_card(self, ui: UI) -> None:
@@ -511,8 +513,8 @@ class SettingsView(View):
         return [
             Panel(26, 148, 490, 300, 22),
             Panel(26, 460, 490, 148, 22),
-            Panel(546, 148, 488, 252, 22),
-            Panel(546, 412, 488, 196, 22),
+            Panel(546, 148, 488, 220, 22),
+            Panel(546, 380, 488, 228, 22),
         ]
 
     def build(self, ui: UI) -> None:
@@ -527,26 +529,29 @@ class SettingsView(View):
         x0, y0 = p(26), p(148)
         ui.text(x0 + p(24), y0 + p(30), "Видео", 13.5, TEXT, "semibold")
         rows = [
-            ("Плавность", 74), ("Качество", 120), ("Кодировщик", 166),
-            ("Формат", 212), ("Курсор мыши", 258),
+            ("Частота кадров", 74), ("Качество", 126), ("Кодировщик", 172),
+            ("Формат", 218), ("Курсор мыши", 264),
         ]
         for label, yy in rows:
             ui.text(x0 + p(24), y0 + p(yy), label, 11.8, MUTED)
         ui.segmented((x0 + p(202), y0 + p(58), p(124), p(32)), ["24", "30", "60"],
                      (24, 30, 60).index(settings.fps), app.set_fps, size=11, radius=10)
-        ui.segmented((x0 + p(156), y0 + p(104), p(170), p(32)),
+        ui.text(x0 + p(24), y0 + p(94), "Чем больше — тем плавнее движение и больше файл",
+                9, DIM, max_width=p(440))
+        ui.text(x0 + p(334), y0 + p(74), "к/с", 10, DIM, "semibold")
+        ui.segmented((x0 + p(156), y0 + p(110), p(170), p(32)),
                      ["Высокое", "Баланс", "Компактно"],
                      ("high", "balanced", "small").index(settings.quality),
                      app.set_quality, size=10, radius=10)
-        ui.segmented((x0 + p(202), y0 + p(150), p(124), p(32)), ["Авто", "CPU"],
+        ui.segmented((x0 + p(202), y0 + p(156), p(124), p(32)), ["Авто", "CPU"],
                      ("auto", "software").index(settings.encoder),
                      lambda index: app.set_encoder(("auto", "software")[index]),
                      size=10.5, radius=10)
-        ui.segmented((x0 + p(202), y0 + p(196), p(124), p(32)), ["MP4", "MKV"],
+        ui.segmented((x0 + p(202), y0 + p(202), p(124), p(32)), ["MP4", "MKV"],
                      ("mp4", "mkv").index(settings.format),
                      lambda index: app.set_format(("mp4", "mkv")[index]),
                      size=10.5, radius=10)
-        ui.toggle(x0 + p(424), y0 + p(246), settings.show_cursor,
+        ui.toggle(x0 + p(424), y0 + p(252), settings.show_cursor,
                   lambda value: app.set_bool("show_cursor", value))
 
         # ---- folder ---------------------------------------------------
@@ -566,25 +571,28 @@ class SettingsView(View):
         self._gain_row(ui, "mic", "Микрофон", x0, y0, 146, settings.mic_gain)
 
         # ---- behaviour ------------------------------------------------
-        x0, y0 = p(546), p(412)
+        x0, y0 = p(546), p(380)
         ui.text(x0 + p(24), y0 + p(30), "Поведение", 13.5, TEXT, "semibold")
-        ui.text(x0 + p(24), y0 + p(68), "Обратный отсчёт", 11.5, MUTED)
-        ui.segmented((x0 + p(322), y0 + p(52), p(140), p(32)), ["0", "3", "5"],
+        ui.text(x0 + p(24), y0 + p(66), "Обратный отсчёт", 11.5, MUTED)
+        ui.segmented((x0 + p(322), y0 + p(50), p(140), p(32)), ["0", "3", "5"],
                      (0, 3, 5).index(settings.countdown), app.set_countdown,
                      size=11, radius=10)
-        ui.text(x0 + p(24), y0 + p(106), "Скрывать окно при записи", 11.5, MUTED)
-        ui.toggle(x0 + p(418), y0 + p(92), settings.hide_on_record,
+        ui.text(x0 + p(24), y0 + p(102), "Скрывать окно в трей при записи", 11.5, MUTED)
+        ui.toggle(x0 + p(418), y0 + p(88), settings.hide_on_record,
                   lambda value: app.set_bool("hide_on_record", value))
-        ui.text(x0 + p(24), y0 + p(144), "Горячие клавиши", 11.5, MUTED)
-        ui.toggle(x0 + p(418), y0 + p(130), settings.hotkeys,
+        ui.text(x0 + p(24), y0 + p(138), "Панель управления при записи", 11.5, MUTED)
+        ui.toggle(x0 + p(418), y0 + p(124), settings.show_overlay,
+                  lambda value: app.set_bool("show_overlay", value))
+        ui.text(x0 + p(24), y0 + p(174), "Горячие клавиши", 11.5, MUTED)
+        ui.toggle(x0 + p(418), y0 + p(160), settings.hotkeys,
                   lambda value: app.set_bool("hotkeys", value))
-        ui.text(x0 + p(24), y0 + p(182), "Открывать папку после записи", 11.5, MUTED)
-        ui.toggle(x0 + p(418), y0 + p(168), settings.open_folder_after,
+        ui.text(x0 + p(24), y0 + p(210), "Открывать папку после записи", 11.5, MUTED)
+        ui.toggle(x0 + p(418), y0 + p(196), settings.open_folder_after,
                   lambda value: app.set_bool("open_folder_after", value))
 
         # ---- footer ---------------------------------------------------
         cy = p(663)
-        info = f"SR Pro 4.0 · FFmpeg {app.ffmpeg_version}"
+        info = f"SR Pro 4.1 · FFmpeg {app.ffmpeg_version}"
         ui.text(p(26), cy, info, 10.5, FAINT, max_width=p(620))
         hw = app.hw_encoder
         ui.text(p(1034), cy, "Аппаратное ускорение: " + (hw or "нет"), 10.5, FAINT,

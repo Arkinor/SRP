@@ -204,12 +204,12 @@ def button_face(width: int, height: int, radius: int, kind: str, state: int) -> 
     ImageDraw.Draw(mask).rounded_rectangle((0, 0, w - 1, h - 1), radius=radius * ss, fill=255)
 
     if kind == "primary":
-        base = gradient((w, h), (255, 126, 116, 255), (227, 39, 71, 255))
+        base = gradient((w, h), (255, 92, 108, 255), (214, 26, 56, 255))
         body = base
         if state == 1:
-            body = gradient((w, h), (255, 140, 128, 255), (236, 52, 82, 255))
+            body = gradient((w, h), (255, 114, 128, 255), (229, 40, 70, 255))
         elif state == 2:
-            body = gradient((w, h), (236, 106, 100, 255), (205, 28, 58, 255))
+            body = gradient((w, h), (219, 68, 86, 255), (186, 20, 48, 255))
         canvas.paste(body, (0, 0), mask)
         gloss = gradient((w, h), (255, 255, 255, 64), (255, 255, 255, 0))
         gloss_mask = Image.new("L", (w, h), 0)
@@ -219,7 +219,10 @@ def button_face(width: int, height: int, radius: int, kind: str, state: int) -> 
         ImageDraw.Draw(fade).rectangle((0, 0, w, int(h * 0.48)), fill=255)
         fade = fade.filter(ImageFilter.GaussianBlur(max(1, h * 0.06)))
         gloss_mask = Image.composite(gloss_mask, Image.new("L", (w, h), 0), fade)
-        canvas = Image.composite(gloss, canvas, gloss_mask)
+        # paste on a transparent layer and alpha-composite: keeps the body opaque
+        gloss_layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        gloss_layer.paste(gloss, (0, 0), gloss_mask)
+        canvas = Image.alpha_composite(canvas, gloss_layer)
         outline = (255, 255, 255, 84 if state == 0 else 110)
     elif kind == "danger":
         alpha = (34, 50, 66)[min(state, 2)]
@@ -266,7 +269,9 @@ def button_face(width: int, height: int, radius: int, kind: str, state: int) -> 
         top = Image.new("L", (w, h), 0)
         ImageDraw.Draw(top).rectangle((0, 0, w, int(h * 0.55)), fill=255)
         spec_mask = Image.composite(spec_mask, Image.new("L", (w, h), 0), top)
-        canvas = Image.composite(spec, canvas, spec_mask)
+        spec_layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        spec_layer.paste(spec, (0, 0), spec_mask)
+        canvas = Image.alpha_composite(canvas, spec_layer)
 
     return canvas.resize((width, height), Image.LANCZOS)
 

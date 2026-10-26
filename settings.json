@@ -22,9 +22,11 @@
   "mic_gain": 1.0,
   "show_cursor": true,
   "countdown": 0,
-  "hide_on_record": false,
+  "hide_on_record": true,
+  "show_overlay": true,
+  "overlay_pos": {},
   "hotkeys": true,
   "open_folder_after": false,
   "format": "mp4",
-  "schema": 1
+  "schema": 2
 }

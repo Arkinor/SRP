@@ -367,6 +367,24 @@ def minimize(hwnd: int) -> None:
         pass
 
 
+def is_minimized(hwnd: int) -> bool:
+    try:
+        return bool(user32.IsIconic(hwnd))
+    except Exception:
+        return False
+
+
+def set_no_activate(hwnd: int) -> None:
+    """Keep a helper window out of Alt+Tab and stop it stealing focus."""
+    try:
+        style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+        style = (style | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW
+        user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style)
+        user32.SetWindowPos(hwnd, 0, 0, 0, 0, 0, 0x27)
+    except Exception:
+        pass
+
+
 def restore(hwnd: int) -> None:
     try:
         user32.ShowWindow(hwnd, SW_RESTORE)
@@ -421,6 +439,17 @@ def single_instance() -> bool:
 
 
 def activate_existing() -> None:
+    # The window may be hidden in the tray, so FindWindow (which also sees
+    # hidden windows) is used before the generic visible-window scan.
+    try:
+        import win32gui
+
+        hwnd = win32gui.FindWindow(None, "SR Pro")
+        if hwnd:
+            bring_to_front(hwnd)
+            return
+    except Exception:
+        pass
     for w in list_windows(exclude_pid=-1, include_minimized=True):
         if w.title.startswith("SR Pro") and "Recorder" not in w.title:
             bring_to_front(w.hwnd)

@@ -11,7 +11,7 @@ from typing import Any
 
 APP_NAME = "SR Pro"
 APP_TAGLINE = "Screen Recorder"
-VERSION = "4.0"
+VERSION = "4.1"
 
 FROZEN = bool(getattr(sys, "frozen", False))
 _RES_DIR = getattr(sys, "_MEIPASS", None) or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -96,11 +96,13 @@ class Settings:
     mic_gain: float = 1.0
     show_cursor: bool = True
     countdown: int = 3
-    hide_on_record: bool = False
+    hide_on_record: bool = True
+    show_overlay: bool = True
+    overlay_pos: dict = field(default_factory=dict)
     hotkeys: bool = True
     open_folder_after: bool = False
     format: str = "mp4"
-    schema: int = 1
+    schema: int = 2
 
     # ---------- persistence ----------
     @classmethod
@@ -119,7 +121,12 @@ class Settings:
                 setattr(obj, key, value)
             except Exception:
                 pass
+        previous_schema = int(data.get("schema", 1) or 1)
         obj.sanitize()
+        if previous_schema < 2:
+            # v4.1 hides the main window while recording and shows the floating bar
+            obj.hide_on_record = True
+            obj.schema = 2
         return obj
 
     def sanitize(self) -> None:
@@ -135,6 +142,8 @@ class Settings:
             self.countdown = 3
         if self.format not in ("mp4", "mkv"):
             self.format = "mp4"
+        if not isinstance(self.overlay_pos, dict):
+            self.overlay_pos = {}
         try:
             self.system_gain = float(min(max(self.system_gain, 0.0), 3.0))
             self.mic_gain = float(min(max(self.mic_gain, 0.0), 3.0))

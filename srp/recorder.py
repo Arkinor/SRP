@@ -60,6 +60,8 @@ def build_source(settings: Settings) -> tuple[Optional[video.SourceSpec], str]:
         rect = clamp_rect(rect)
         return video.SourceSpec("region", rect, subtitle="Выбранная область"), ""
     if mode == "window":
+        if settings.window_hwnd and winapi.is_minimized(settings.window_hwnd):
+            return None, "Окно свёрнуто — разверните его и начните запись снова"
         info = winapi.find_window(settings.window_hwnd, settings.window_title)
         if not info:
             return None, "Окно не найдено — выберите его заново"

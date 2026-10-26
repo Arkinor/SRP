@@ -23,6 +23,7 @@ from ..config import (
 )
 from ..recorder import Recorder, build_source, capture_screenshot
 from . import icons
+from .editor import VideoEditor
 from .kit import Panel, PopupItem, UI, build_background, tile_image
 from .overlay import RecordingOverlay
 from .overlays import RegionSelector
@@ -127,6 +128,7 @@ class App:
         self._tray: Optional[TrayIcon] = None
         self._tray_state = ""
         self._overlay: Optional[RecordingOverlay] = None
+        self._editor: Optional[VideoEditor] = None
         self._quit_after_save = False
         self._save_job = None
         self._hotkeys: list = []
@@ -526,6 +528,9 @@ class App:
         if self._overlay is not None:
             self._overlay.destroy()
             self._overlay = None
+        if self._editor is not None:
+            self._editor.close()
+            self._editor = None
         if self._tray is not None:
             self._tray.stop()
             self._tray = None
@@ -632,6 +637,8 @@ class App:
             return
         self.settings.save()
         self.menu_state = None
+        if self._editor is not None:
+            self._editor.suspend()
         self._apply_capture_exclusion()
         hidden = self._hidden_to_tray or self._hidden_for_record
         try:
@@ -653,10 +660,14 @@ class App:
         self.state = "idle"
         self.countdown_end = 0.0
         self._apply_capture_exclusion()
+        if self._editor is not None:
+            self._editor.resume()
         self.build()
 
     def _begin_recording(self) -> None:
         self.state = "starting"
+        if self._editor is not None:
+            self._editor.suspend()
         self._apply_capture_exclusion()
         self.build()
         winapi.beep(980, 90)
@@ -682,6 +693,8 @@ class App:
             self.recorder = None
             self.state = "idle"
             self._apply_capture_exclusion()
+            if self._editor is not None:
+                self._editor.resume()
             self._sync_overlay()
             self.build()
             self.toast(error or "Не удалось начать запись", icon="warning", color=RED)
@@ -705,6 +718,8 @@ class App:
             self.root.withdraw()
         except Exception:
             pass
+        if self._editor is not None:
+            self._editor.suspend()
         if self._tray is not None:
             self._tray.notify(
                 "Запись идёт. Панель управления — поверх окон, значок — в трее.",
@@ -771,6 +786,8 @@ class App:
         if self._hidden_for_record:
             self._hidden_for_record = False
             self.show_main(focus=False)
+        if self._editor is not None:
+            self._editor.resume()
         self._apply_capture_exclusion()
         self._sync_overlay()
         self.build()
@@ -1230,6 +1247,30 @@ class App:
             os.startfile(str(path))
         except Exception as exc:
             self.toast(f"Не удалось открыть файл: {exc}", icon="warning", color=RED)
+
+    def edit_recording(self, path: str) -> None:
+        if self._editor is not None:
+            self._editor.close()
+            self._editor = None
+        try:
+            editor = VideoEditor(self, path,
+                                 hidden=self.state != "idle")
+        except Exception:
+            LOG.exception("Не удалось открыть редактор")
+            self.toast("Не удалось открыть редактор", icon="warning", color=RED)
+            return
+        self._editor = editor if editor.alive else None
+        if self._editor is None:
+            return
+
+    def on_edit_saved(self, path: str) -> None:
+        name = Path(path).name
+        self.refresh_gallery()
+        if self._hidden_to_tray or self._hidden_for_record:
+            if self._tray is not None:
+                self._tray.notify(f"Видео сохранено · {name}")
+            return
+        self.toast(f"Сохранено · {name}", icon="check", color=GREEN, seconds=5)
 
     def delete_recording(self, path: str, name: str) -> None:
         def apply() -> None:

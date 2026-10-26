@@ -140,6 +140,29 @@ def _draw_close(d, S, w, c):
     _line(d, [(S * 0.71, S * 0.29), (S * 0.29, S * 0.71)], w, c)
 
 
+def _draw_chevron_left(d, S, w, c):
+    _line(d, [(S * 0.58, S * 0.30), (S * 0.40, S * 0.50), (S * 0.58, S * 0.70)], w, c)
+
+
+def _draw_chevron_right(d, S, w, c):
+    _line(d, [(S * 0.42, S * 0.30), (S * 0.60, S * 0.50), (S * 0.42, S * 0.70)], w, c)
+
+
+def _draw_scissors(d, S, w, c):
+    _line(d, [(S * 0.30, S * 0.18), (S * 0.70, S * 0.62)], w, c, caps=False)
+    _line(d, [(S * 0.70, S * 0.18), (S * 0.30, S * 0.62)], w, c, caps=False)
+    r = S * 0.11
+    d.ellipse((S * 0.16 - r, S * 0.66 - r, S * 0.16 + r, S * 0.66 + r),
+              outline=c, width=w)
+    d.ellipse((S * 0.84 - r, S * 0.66 - r, S * 0.84 + r, S * 0.66 + r),
+              outline=c, width=w)
+
+
+def _draw_undo(d, S, w, c):
+    d.arc((S * 0.20, S * 0.26, S * 0.80, S * 0.84), 35, 320, fill=c, width=w)
+    _polygon(d, [(S * 0.16, S * 0.24), (S * 0.20, S * 0.48), (S * 0.40, S * 0.34)], fill=c)
+
+
 def _draw_chevron_down(d, S, w, c):
     _line(d, [(S * 0.30, S * 0.42), (S * 0.50, S * 0.60), (S * 0.70, S * 0.42)], w, c)
 
@@ -218,6 +241,10 @@ _DRAW: dict[str, Callable] = {
     "close": _draw_close,
     "chevron_down": _draw_chevron_down,
     "chevron_up": _draw_chevron_up,
+    "chevron_left": _draw_chevron_left,
+    "chevron_right": _draw_chevron_right,
+    "scissors": _draw_scissors,
+    "undo": _draw_undo,
     "check": _draw_check,
     "clock": _draw_clock,
     "cursor": _draw_cursor,

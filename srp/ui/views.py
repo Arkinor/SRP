@@ -485,6 +485,12 @@ class GalleryView(View):
         ui.icon_button(play_cx, y + h / 2, 34, "play",
                        lambda path=path: app.play_recording(path),
                        kind="secondary", icon_color=TEXT)
+        edit_w = p(142)
+        edit_x = play_cx - p(27) - edit_w
+        ui.button((edit_x, y + (h - p(34)) / 2, edit_w, p(34)), "Редактировать",
+                  "secondary", "scissors", 13,
+                  lambda path=path: app.edit_recording(path),
+                  size=9.9, radius=10)
 
     def _empty(self, ui: UI) -> None:
         app, t, p = self.app, self.app.t, self.app.t.px

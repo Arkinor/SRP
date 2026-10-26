@@ -278,8 +278,8 @@ class RecordView(View):
         fps_index = (24, 30, 60).index(settings.fps)
         ui.segmented((x0 + p(198), y0 + p(38), RIGHT_W - p(218), p(32)),
                      ["24", "30", "60"], fps_index, app.set_fps, size=11, radius=10)
-        ui.text(x0 + p(20), y0 + p(76), "Чем больше — тем плавнее движение и больше файл",
-                9.2, DIM, max_width=p(344))
+        # ui.text(x0 + p(20), y0 + p(76), "Чем больше — тем плавнее движение и больше файл",
+        #         9.2, DIM, max_width=p(344))
 
         ui.text(x0 + p(20), y0 + p(104), "Качество", 11.5, MUTED)
         q_index = ("high", "balanced", "small").index(settings.quality)
@@ -536,8 +536,8 @@ class SettingsView(View):
             ui.text(x0 + p(24), y0 + p(yy), label, 11.8, MUTED)
         ui.segmented((x0 + p(202), y0 + p(58), p(124), p(32)), ["24", "30", "60"],
                      (24, 30, 60).index(settings.fps), app.set_fps, size=11, radius=10)
-        ui.text(x0 + p(24), y0 + p(94), "Чем больше — тем плавнее движение и больше файл",
-                9, DIM, max_width=p(440))
+        # ui.text(x0 + p(24), y0 + p(94), "Чем больше — тем плавнее движение и больше файл",
+        #         9, DIM, max_width=p(440))
         ui.text(x0 + p(334), y0 + p(74), "к/с", 10, DIM, "semibold")
         ui.segmented((x0 + p(156), y0 + p(110), p(170), p(32)),
                      ["Высокое", "Баланс", "Компактно"],

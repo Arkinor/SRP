@@ -16,3 +16,21 @@ TypeError: App.open_device_menu() missing 1 required positional argument: 'ancho
 14:09:49 WARNING [AudioTest] Не удалось открыть Headphones (JBL TUNE520BT) на 32000 Hz: invalid argument
 14:09:49 WARNING [AudioTest] Не удалось открыть Headphones (JBL TUNE520BT) на 16000 Hz: invalid argument
 14:09:49 WARNING [AudioTest] Не удалось открыть Headphones (JBL TUNE520BT) на 8000 Hz: invalid argument
+14:05:37 WARNING [AudioTest] Не удалось открыть Headphones (JBL TUNE520BT) на 48000 Hz: invalid argument
+14:05:37 WARNING [AudioTest] Не удалось открыть Headphones (JBL TUNE520BT) на 44100 Hz: invalid argument
+14:05:37 WARNING [AudioTest] Не удалось открыть Headphones (JBL TUNE520BT) на 32000 Hz: invalid argument
+14:05:37 WARNING [AudioTest] Не удалось открыть Headphones (JBL TUNE520BT) на 16000 Hz: invalid argument
+14:05:37 WARNING [AudioTest] Не удалось открыть Headphones (JBL TUNE520BT) на 8000 Hz: invalid argument
+14:09:44 ERROR   [MainThread] Ошибка нажатия
+Traceback (most recent call last):
+  File "C:\Users\zhdankin_aa\Desktop\Work\Project\SRP\srp\ui\app.py", line 387, in _on_release
+    hit.on_click()
+  File "C:\Users\zhdankin_aa\Desktop\Work\Project\SRP\srp\ui\views.py", line 265, in <lambda>
+    ui.hit(rect, lambda k=kind: app.open_device_menu(k))
+                                ^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: App.open_device_menu() missing 1 required positional argument: 'anchor'
+14:09:49 WARNING [AudioTest] Не удалось открыть Headphones (JBL TUNE520BT) на 48000 Hz: invalid argument
+14:09:49 WARNING [AudioTest] Не удалось открыть Headphones (JBL TUNE520BT) на 44100 Hz: invalid argument
+14:09:49 WARNING [AudioTest] Не удалось открыть Headphones (JBL TUNE520BT) на 32000 Hz: invalid argument
+14:09:49 WARNING [AudioTest] Не удалось открыть Headphones (JBL TUNE520BT) на 16000 Hz: invalid argument
+14:09:49 WARNING [AudioTest] Не удалось открыть Headphones (JBL TUNE520BT) на 8000 Hz: invalid argument

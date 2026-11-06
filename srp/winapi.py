@@ -80,6 +80,10 @@ class MONITORINFOEXW(ctypes.Structure):
     ]
 
 
+user32.GetMonitorInfoW.argtypes = [wintypes.HMONITOR, ctypes.POINTER(MONITORINFOEXW)]
+user32.GetMonitorInfoW.restype = wintypes.BOOL
+
+
 def enable_dpi_awareness() -> None:
     """Must run before Tk/mss so coordinates match physical pixels."""
     try:

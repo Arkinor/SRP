@@ -197,7 +197,10 @@ class Recorder:
         for capture in self.audio_captures:
             capture.ready.wait(timeout=max(0.2, deadline - time.time()))
             if capture.failed or not capture.ready.is_set():
-                self._warn(f"Не удалось открыть: {capture.device.short_name}")
+                title = "Системный звук" if capture.device.kind == "system" else "Микрофон"
+                reason = capture.error or "устройство не отвечает"
+                self._warn(f"{title} не открылся ({capture.device.short_name}): {reason}. "
+                           f"Запись пойдёт без него")
                 self.audio_devices.pop(capture.device.kind, None)
 
         # ---- video pipeline

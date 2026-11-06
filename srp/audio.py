@@ -178,6 +178,8 @@ def find_device(device_id: str, kind: str) -> Optional[AudioDevice]:
         for device in pool:
             if device.id == device_id:
                 return device
+        LOG.warning("Сохранённое устройство %s не найдено — используется устройство по умолчанию",
+                    device_id)
     for device in pool:
         if device.is_default:
             return device
@@ -203,6 +205,24 @@ def _resolve_soundcard_device(device: AudioDevice):
     raise RuntimeError(f"Устройство не найдено: {device.name}")
 
 
+def _channel_options(soundcard_device) -> list[Optional[int]]:
+    """Channel counts to try for a shared-mode stream.
+
+    Bluetooth hands-free endpoints often advertise a device format whose
+    channel count differs from the real mix format, which makes
+    ``IAudioClient::Initialize`` fail with E_INVALIDARG ("invalid argument").
+    """
+    options: list[Optional[int]] = [None]
+    try:
+        reported = int(getattr(soundcard_device, "channels", 0) or 0)
+    except Exception:
+        reported = 0
+    for channels in (reported, 1, 2):
+        if channels > 0 and channels not in options:
+            options.append(channels)
+    return options
+
+
 class _OpenedRecorder:
     def __init__(self, device: AudioDevice):
         self.device = device
@@ -213,30 +233,41 @@ class _OpenedRecorder:
 
     def open(self) -> None:
         last_error: Optional[Exception] = None
+        attempts = 0
         soundcard_device = _resolve_soundcard_device(self.device)
         for rate in RATE_CANDIDATES:
             block = max(256, int(rate * 0.02))
-            rec = None
-            try:
-                rec = soundcard_device.recorder(samplerate=rate, blocksize=block)
-                rec.__enter__()
-                probe = rec.record(numframes=min(block, 512))
-                if probe is None or len(probe) == 0:
-                    raise RuntimeError("устройство не отдаёт данные")
-                self.rate = rate
-                self.block = block
-                self.channels = int(probe.shape[1]) if probe.ndim > 1 else 1
-                self._recorder = rec
-                LOG.info("Аудио открыто: %s @ %d Hz, %d ch", self.device.name, rate, self.channels)
-                return
-            except Exception as exc:
-                last_error = exc
-                LOG.warning("Не удалось открыть %s на %d Hz: %s", self.device.name, rate, exc)
-                if rec is not None:
-                    try:
-                        rec.__exit__(None, None, None)
-                    except Exception:
-                        pass
+            for channels in _channel_options(soundcard_device):
+                attempts += 1
+                rec = None
+                try:
+                    rec = soundcard_device.recorder(samplerate=rate, channels=channels,
+                                                    blocksize=block)
+                    rec.__enter__()
+                    probe = rec.record(numframes=min(block, 512))
+                    if probe is None or len(probe) == 0:
+                        raise RuntimeError("устройство не отдаёт данные")
+                    self.rate = rate
+                    self.block = block
+                    self.channels = int(probe.shape[1]) if probe.ndim > 1 else 1
+                    self._recorder = rec
+                    LOG.info("Аудио открыто: %s @ %d Hz, %d ch", self.device.name, rate, self.channels)
+                    return
+                except Exception as exc:
+                    last_error = exc
+                    if attempts == 1:
+                        LOG.warning("Не удалось открыть %s на %d Hz: %s",
+                                    self.device.name, rate, exc)
+                    else:
+                        LOG.debug("Не удалось открыть %s на %d Hz (%s кан.): %s",
+                                  self.device.name, rate, channels or "авто", exc)
+                    if rec is not None:
+                        try:
+                            rec.__exit__(None, None, None)
+                        except Exception:
+                            pass
+        LOG.warning("Не удалось открыть %s: перебрано %d вариантов формата, последняя ошибка: %s",
+                    self.device.name, attempts, last_error)
         raise RuntimeError(f"Не удалось открыть устройство: {last_error}")
 
     def record(self, frames: int) -> np.ndarray:

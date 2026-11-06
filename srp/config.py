@@ -95,6 +95,7 @@ class Settings:
     system_gain: float = 1.0
     mic_gain: float = 1.0
     show_cursor: bool = True
+    show_metrics: bool = True
     countdown: int = 3
     hide_on_record: bool = True
     show_overlay: bool = True

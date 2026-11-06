@@ -1,7 +1,7 @@
 {
   "video_dir": "D:\\Project\\SRP\\Записи",
   "source_mode": "monitor",
-  "monitor_name": "\\\\.\\DISPLAY2",
+  "monitor_name": "\\\\.\\DISPLAY1",
   "monitor_rect": {
     "left": 0,
     "top": 0,
@@ -21,6 +21,7 @@
   "system_gain": 1.0,
   "mic_gain": 1.0,
   "show_cursor": true,
+  "show_metrics": true,
   "countdown": 0,
   "hide_on_record": true,
   "show_overlay": true,

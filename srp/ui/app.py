@@ -15,6 +15,7 @@ from tkinter import filedialog
 from typing import Callable, Optional
 
 import numpy as np
+import psutil
 from PIL import Image, ImageOps, ImageTk
 
 from .. import audio, ffmpeg_tools, logger, video, winapi
@@ -76,6 +77,50 @@ class PreviewWorker(threading.Thread):
         self.request.set()
 
 
+class MetricsWorker(threading.Thread):
+    """Samples CPU/RAM usage and disk temperatures away from the UI thread.
+
+    Disk temperatures are queried through an IOCTL that can block for a moment
+    on spinning drives, so they are refreshed rarely and never on the UI thread.
+    """
+
+    def __init__(self, path: Path) -> None:
+        super().__init__(name="Metrics", daemon=True)
+        self.path = path
+        self.stop_event = threading.Event()
+        self.cpu: Optional[float] = None
+        self.ram: Optional[float] = None
+        self.disks: list[tuple[int, float]] = []
+        self.disk_free: Optional[float] = None
+
+    def run(self) -> None:
+        try:
+            psutil.cpu_percent(None)  # prime the counter, the first call returns 0
+        except Exception:
+            pass
+        last_disk = 0.0
+        while not self.stop_event.wait(1.0):
+            try:
+                self.cpu = psutil.cpu_percent(None)
+                self.ram = psutil.virtual_memory().percent
+            except Exception:
+                self.cpu = self.ram = None
+            now = time.perf_counter()
+            if now - last_disk >= 15.0:
+                last_disk = now
+                try:
+                    self.disks = winapi.disk_temperatures()
+                except Exception:
+                    self.disks = []
+                try:
+                    self.disk_free = psutil.disk_usage(str(self.path)).free / 1024 ** 3
+                except Exception:
+                    self.disk_free = None
+
+    def close(self) -> None:
+        self.stop_event.set()
+
+
 class App:
     def __init__(self, root: tk.Tk):
         self.root = root
@@ -114,6 +159,15 @@ class App:
         self.progress_subtitle = ""
 
         self._levels = {"system": 0.0, "mic": 0.0}
+        self._hud_items: dict[str, int] = {}
+        self._metrics: Optional[MetricsWorker] = None
+        self._hud_fps = float(self.settings.fps)
+        self._hud_cpu: Optional[float] = None
+        self._hud_ram: Optional[float] = None
+        self._hud_disks: list[tuple[int, float]] = []
+        self._disk_detail = 0
+        self._hud_at = 0.0
+        self._disk_warned = 0.0
         self._hover = None
         self._active = None
         self._pressed_at = (0, 0)
@@ -149,6 +203,8 @@ class App:
         self.backgrounds: dict[str, Image.Image] = {}
 
         self._start_preview()
+        self._metrics = MetricsWorker(self.settings.output_dir)
+        self._metrics.start()
         self.refresh_devices()
         self.refresh_gallery()
         self._detect_tools()
@@ -287,6 +343,145 @@ class App:
                        kind="ghost", icon_color=MUTED)
         ui.icon_button(p(981), p(36), 32, "minimize", self.minimize,
                        kind="ghost", icon_color=MUTED)
+        ui.icon_button(p(944), p(36), 30, "pulse", self.toggle_metrics,
+                       kind="ghost", icon_size=13,
+                       icon_color=ACCENT if self.settings.show_metrics else MUTED)
+        self._draw_hud()
+
+    def toggle_metrics(self) -> None:
+        self.settings.show_metrics = not self.settings.show_metrics
+        self.save_now()
+        self.build()
+
+    # HUD: live numbers in the top-right corner, laid out right to left.
+    HUD_RIGHT = 918
+    HUD_MIN_X = 704
+    HUD_ITEMS = (("fps", "FPS"), ("cpu", "CPU"), ("ram", "RAM"), ("disk", "ДИСК"))
+
+    def _draw_hud(self) -> None:
+        ui, p = self.ui, self.p
+        self._hud_items = {}
+        if not self.settings.show_metrics:
+            return
+        right = p(self.HUD_RIGHT)
+        for key, caption in self.HUD_ITEMS:
+            if key == "disk":
+                variants = self._disk_variants()
+                if not variants:
+                    continue
+                caption = "ДИСКИ" if len(self._hud_disks) > 1 else "ДИСК"
+                chosen = None
+                for detail, candidate in enumerate(variants):
+                    width = max(ui.measure(candidate, 12.5, "semibold"),
+                                ui.measure(caption, 7.6)) + p(16)
+                    if right - width >= p(self.HUD_MIN_X):
+                        chosen = (detail, candidate, width)
+                        break
+                if chosen is None:
+                    continue
+                self._disk_detail, value, width = chosen
+            else:
+                value = self._hud_text(key)
+                width = max(ui.measure(value, 12.5, "semibold"),
+                            ui.measure(caption, 7.6)) + p(16)
+                if right - width < p(self.HUD_MIN_X):
+                    continue
+            right -= width
+            self._hud_items[key] = ui.text(right, p(30), value, 12.5,
+                                           self._hud_color(key), "semibold")
+            ui.text(right, p(47), caption, 7.6, "#8F98AD")
+
+    def _disk_variants(self) -> list[str]:
+        """Disk temperature readouts from most to least detailed."""
+        if not self._hud_disks:
+            return []
+        pairs = sorted(self._hud_disks)
+        temps = [temp for _index, temp in pairs]
+        if len(pairs) == 1:
+            return [f"{temps[0]:.0f}°"]
+        return [
+            " ".join(f"{index}·{temp:.0f}°" for index, temp in pairs),
+            " ".join(f"{temp:.0f}°" for temp in temps),
+            f"{max(temps):.0f}° +{len(temps) - 1}",
+        ]
+
+    def _hud_text(self, key: str) -> str:
+        if key == "cpu":
+            return "—" if self._hud_cpu is None else f"{self._hud_cpu:.0f}%"
+        if key == "ram":
+            return "—" if self._hud_ram is None else f"{self._hud_ram:.0f}%"
+        if key == "disk":
+            variants = self._disk_variants()
+            if not variants:
+                return "—"
+            return variants[min(self._disk_detail, len(variants) - 1)]
+        return f"{self._hud_fps:.0f}"
+
+    def _hud_color(self, key: str) -> str:
+        if key == "fps":
+            if self.state in ("recording", "paused"):
+                target = float(self.settings.fps) or 1.0
+                return TEXT_SOFT if self._hud_fps >= target * 0.9 else YELLOW
+            return DIM  # target rate, not a measurement yet
+        if key == "disk":
+            hottest = max(temp for _index, temp in self._hud_disks)
+            if hottest >= 65:
+                return RED
+            if hottest >= 55:
+                return YELLOW
+            return TEXT_SOFT
+        value = self._hud_cpu if key == "cpu" else self._hud_ram
+        if value is None:
+            return FAINT
+        limit_high, limit_warn = (85, 60) if key == "cpu" else (90, 75)
+        if value >= limit_high:
+            return RED
+        if value >= limit_warn:
+            return YELLOW
+        return TEXT_SOFT
+
+    def _update_hud(self) -> None:
+        now = time.perf_counter()
+        if now - self._hud_at < 0.5:
+            return
+        self._hud_at = now
+        metrics = self._metrics
+        if metrics is not None:
+            self._hud_cpu = metrics.cpu
+            self._hud_ram = metrics.ram
+            if len(metrics.disks) != len(self._hud_disks):
+                # the caption ("ДИСК"/"ДИСКИ") and the layout depend on the count
+                self._hud_disks = metrics.disks
+                self._check_free_space(now)
+                self.build()
+                return
+            self._hud_disks = metrics.disks
+        self._check_free_space(now)
+        if not self._hud_items:
+            return
+        if self.recorder is not None and self.state in ("recording", "paused"):
+            try:
+                self._hud_fps = float(self.recorder.stats().get("capture_fps", 0.0))
+            except Exception:
+                self._hud_fps = 0.0
+        else:
+            self._hud_fps = float(self.settings.fps)
+        for key, item in self._hud_items.items():
+            try:
+                self.ui.canvas.itemconfig(item, text=self._hud_text(key),
+                                          fill=self._hud_color(key))
+            except Exception:
+                pass
+
+    def _check_free_space(self, now: float) -> None:
+        free = self._metrics.disk_free if self._metrics is not None else None
+        if free is None or free >= 2.0:
+            return
+        if now - self._disk_warned < 300.0:
+            return
+        self._disk_warned = now
+        self.toast(f"На диске записей осталось {free:.1f} ГБ — запись может прерваться",
+                   icon="warning", color=YELLOW, seconds=6)
 
     def _draw_countdown(self) -> None:
         ui, p = self.ui, self.p
@@ -536,6 +731,8 @@ class App:
             self._tray = None
         if self._preview is not None:
             self._preview.close()
+        if self._metrics is not None:
+            self._metrics.close()
         try:
             self.root.destroy()
         except Exception:
@@ -560,6 +757,20 @@ class App:
             self.events.put(("devices", (system, mics, error)))
 
         threading.Thread(target=worker, name="Devices", daemon=True).start()
+
+    def _drop_stale_devices(self) -> bool:
+        """Forget saved device ids that do not exist on this machine."""
+        changed = False
+        for kind, attribute in (("system", "system_device_id"), ("mic", "mic_device_id")):
+            saved = getattr(self.settings, attribute, "")
+            if not saved:
+                continue
+            if any(device.id == saved for device in self.audio_devices.get(kind) or []):
+                continue
+            setattr(self.settings, attribute, "")
+            changed = True
+            LOG.info("Сохранённое аудиоустройство (%s) не найдено — сброшено", kind)
+        return changed
 
     def _start_preview(self) -> None:
         self._preview = PreviewWorker(self)
@@ -886,7 +1097,12 @@ class App:
     def open_device_menu(self, kind: str, anchor) -> None:
         pool = self.audio_devices.get(kind) or []
         if not pool:
+            # The list is refreshed in a worker thread, so the menu would be
+            # built from stale (empty) data — ask the user to reopen it.
             self.refresh_devices()
+            self.toast("Ищем аудиоустройства — откройте меню снова через секунду",
+                       icon="info", color=BLUE)
+            return
         items = [PopupItem("Не записывать", None, sub="Отключить этот источник")]
         current = self.device(kind)
         for device in pool:
@@ -897,15 +1113,9 @@ class App:
                 sub += " · Bluetooth"
             items.append(PopupItem(device.short_name, device.id, sub=sub,
                                    icon="speaker" if kind == "system" else "mic"))
-        if not pool:
-            items.append(PopupItem("Устройства не найдены", "__none__",
-                                   sub="Подключите устройство и откройте меню снова",
-                                   icon="warning"))
 
         def pick(index: int) -> None:
             item = items[index]
-            if item.value == "__none__":
-                return
             if item.value is None:
                 if kind == "system":
                     self.settings.record_system = False
@@ -1391,6 +1601,7 @@ class App:
                     self._overlay.hide()
             self._check_window_lost()
             self.current_view.tick(self.ui)
+            self._update_hud()
             if self.state == "finalizing" and self._progress_card is not None:
                 self.ui.update_progress(self._progress_card, self.finalize_progress)
             if self.toast_state and self.toast_state["until"] <= time.time():
@@ -1432,6 +1643,8 @@ class App:
                 system, mics, error = event[1]
                 self.audio_devices = {"system": system, "mic": mics}
                 self.audio_error = error
+                if self._drop_stale_devices():
+                    self._save_soon()
                 if self.view_name in ("record", "settings"):
                     self.build()
             elif kind == "about":

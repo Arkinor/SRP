@@ -213,6 +213,11 @@ def _draw_plus(d, S, w, c):
     _line(d, [(S * 0.24, S * 0.5), (S * 0.76, S * 0.5)], w, c)
 
 
+def _draw_pulse(d, S, w, c):
+    _line(d, [(S * 0.10, S * 0.55), (S * 0.30, S * 0.55), (S * 0.42, S * 0.22),
+              (S * 0.58, S * 0.82), (S * 0.70, S * 0.55), (S * 0.90, S * 0.55)], w, c)
+
+
 def _draw_warning(d, S, w, c):
     _polygon(d, [(S * 0.5, S * 0.14), (S * 0.90, S * 0.84), (S * 0.10, S * 0.84)],
              outline=c, width=w)
@@ -252,6 +257,7 @@ _DRAW: dict[str, Callable] = {
     "info": _draw_info,
     "external": _draw_external,
     "plus": _draw_plus,
+    "pulse": _draw_pulse,
     "warning": _draw_warning,
 }
 

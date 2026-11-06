@@ -195,6 +195,84 @@ def monitors() -> list[Monitor]:
     return out
 
 
+IOCTL_STORAGE_QUERY_PROPERTY = 0x2D1400
+STORAGE_DEVICE_TEMPERATURE_PROPERTY = 52
+INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+
+kernel32.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                                 ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD,
+                                 wintypes.HANDLE]
+kernel32.CreateFileW.restype = wintypes.HANDLE
+kernel32.DeviceIoControl.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.c_void_p,
+                                     wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD,
+                                     ctypes.POINTER(wintypes.DWORD), ctypes.c_void_p]
+kernel32.DeviceIoControl.restype = wintypes.BOOL
+
+
+class STORAGE_PROPERTY_QUERY(ctypes.Structure):
+    _fields_ = [("PropertyId", wintypes.DWORD), ("QueryType", wintypes.DWORD),
+                ("AdditionalParameters", ctypes.c_ubyte * 1)]
+
+
+def disk_temperatures() -> list[tuple[int, float]]:
+    """Return ``(physical_drive_index, celsius)`` pairs reported by the drives.
+
+    Uses IOCTL_STORAGE_QUERY_PROPERTY, which does not require administrator
+    rights (unlike the Storage WMI provider or smartctl).  Drives that do not
+    expose a sensor are silently skipped.
+    """
+    found: list[tuple[int, float]] = []
+    query = STORAGE_PROPERTY_QUERY()
+    query.PropertyId = STORAGE_DEVICE_TEMPERATURE_PROPERTY
+    query.QueryType = 0
+    bs = chr(92)
+    for index in range(16):
+        device = bs + bs + "." + bs + "PhysicalDrive" + str(index)
+        try:
+            handle = kernel32.CreateFileW(device, 0, 3, None, 3, 0, None)
+        except Exception:
+            continue
+        if handle is None or handle == INVALID_HANDLE_VALUE:
+            continue
+        try:
+            buffer = ctypes.create_string_buffer(512)
+            returned = wintypes.DWORD(0)
+            ok = kernel32.DeviceIoControl(wintypes.HANDLE(handle), IOCTL_STORAGE_QUERY_PROPERTY,
+                                          ctypes.cast(ctypes.byref(query), ctypes.c_void_p),
+                                          ctypes.sizeof(query),
+                                          ctypes.cast(buffer, ctypes.c_void_p),
+                                          ctypes.sizeof(buffer),
+                                          ctypes.byref(returned), None)
+
+            if not ok:
+                continue
+            # STORAGE_TEMPERATURE_DATA_DESCRIPTOR: version, size, critical,
+            # warning (SHORT), info count (WORD), 10 reserved bytes, then
+            # 16-byte STORAGE_TEMPERATURE_INFO records starting at offset 24.
+            count = int.from_bytes(buffer.raw[12:14], "little")
+            values = []
+            for slot in range(min(count, 8)):
+                offset = 24 + slot * 16
+                raw = buffer.raw[offset:offset + 16]
+                if len(raw) < 4:
+                    break
+                value = int.from_bytes(raw[2:4], "little", signed=True)
+                if value > 200:  # some drivers report Kelvin
+                    value -= 273
+                if -20 < value < 150:
+                    values.append(float(value))
+            if values:
+                found.append((index, max(values)))
+        except Exception:
+            pass
+        finally:
+            try:
+                kernel32.CloseHandle(wintypes.HANDLE(handle))
+            except Exception:
+                pass
+    return found
+
+
 def find_monitor(name: str = "", rect: Optional[dict] = None) -> Optional[Monitor]:
     mons = monitors()
     if name:

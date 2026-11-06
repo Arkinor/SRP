@@ -262,7 +262,7 @@ class RecordView(View):
                     (x0 + p(96), cy + p(21), p(248), p(5)), 0.0, active=False)
             if not recording:
                 rect = (x0 + p(60), cy - p(30), RIGHT_W - p(80), p(60))
-                ui.hit(rect, lambda k=kind: app.open_device_menu(k))
+                ui.hit(rect, lambda k=kind, a=rect: app.open_device_menu(k, a))
             ui.toggle(x0 + p(20), cy - p(23), active,
                       lambda value, k=kind: app.set_audio_enabled(k, value))
         ui.canvas.create_line(x0 + p(20), y0 + p(107), x0 + RIGHT_W - p(20), y0 + p(107),
